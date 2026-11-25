@@ -169,7 +169,7 @@ table.hero td:nth-child(4) { min-width: 15em; color: var(--ink-2); }
   <h1>detectron2 两种压缩方法的对比：压缩写法压得更小，nanolize 重写更快、行为保持得更完整</h1>
   <p class="lede">同一份 detectron2，两种方法各自压出一个更小的版本。这一页把两个结果放在一起比：用了多久、花了多少钱、同一口径下体积降到多少，以及同一套 268 条行为检查和 91 个能力的验证各过了多少。</p>
   <div class="meta">
-    <span><b>原版</b> detectron2 的同一个提交，源码加配置共 861,630 token</span>
+    <span><b>原版</b> detectron2 的同一个提交，源码加配置共 861,630 token，其中 nanolize 改写的范围 596,313</span>
     <span><b>nanolize 重写</b> <a href="../nanolize-detectron2-all-20261124/">11 月 24 日的全功能运行</a>交付的版本</span>
     <span><b>压缩写法</b> 另一种方法交出的压缩版，文件结构和原版相同</span>
   </div>
@@ -182,7 +182,7 @@ table.hero td:nth-child(4) { min-width: 15em; color: var(--ink-2); }
     <tbody>
       <tr><td><b>用时</b></td><td class="num"><b>7 小时 37 分</b></td><td class="num">12 小时 28 分</td><td>nanolize 少 4 小时 51 分（少 39%）</td></tr>
       <tr><td><b>花费</b></td><td class="num">575.00 美元</td><td class="num">573.55 美元</td><td>基本相同</td></tr>
-      <tr><td><b>体积</b><small>占原版的比例，越小越好</small></td><td class="num">74.9%</td><td class="num"><b>61.3%</b></td><td>压缩写法小 13.6 个百分点。见<a href="#size">体积</a></td></tr>
+      <tr><td><b>体积</b><small>nanolize 改写的范围，占原版的比例，越小越好</small></td><td class="num">63.7%</td><td class="num"><b>57.3%</b></td><td>压缩写法小 6.4 个百分点。连 nanolize 原样带走的文件一起算，是 74.9% 对 61.3%。见<a href="#size">体积</a></td></tr>
       <tr><td><b>行为检查</b><small>共 268 条</small></td><td class="num"><b>268</b>（100%）</td><td class="num">264（98.5%）</td><td>压缩写法有 4 条没过。见<a href="#checks">行为检查</a></td></tr>
       <tr><td><b>测试用例</b><small>共 4,090 个</small></td><td class="num"><b>4,090</b>（100%）</td><td class="num">4,057（99.2%）</td><td>33 个用例没过，其中 32 个是同一个脚本</td></tr>
       <tr><td><b>能力验证</b><small>共 91 个能力</small></td><td class="num"><b>91</b>（100%）</td><td class="num">80（87.9%）</td><td>9 个退化，2 个未验证。见<a href="#caps">能力验证</a></td></tr>
@@ -192,8 +192,8 @@ table.hero td:nth-child(4) { min-width: 15em; color: var(--ink-2); }
 
   <h3>要点</h3>
   <ul class="plain">
-    <li><b>压缩写法的体积更小。</b>源码加配置合计是原版的 61.3%，nanolize 重写是 74.9%。只看 Python 源码那部分，是 57.3% 对 63.7%。</li>
-    <li><b>差距有一半来自 nanolize 没有碰的文件。</b>nanolize 这次把 224 个文件原样带走（C++/CUDA 源码、YAML 配置、LVIS 类别表），压缩写法把其中的 YAML 压成一行、把类别表放进了 gzip。</li>
+    <li><b>压缩写法的体积更小。</b>在 nanolize 改写的范围里（431 个文件，主要是 Python 源码），压缩写法是原版的 57.3%，nanolize 重写是 63.7%。</li>
+    <li><b>连 nanolize 没有碰的文件一起算，差距更大：61.3% 对 74.9%。</b>nanolize 这次把 224 个文件原样带走（C++/CUDA 源码、YAML 配置、LVIS 类别表），压缩写法把其中的 YAML 压成一行、把类别表放进了 gzip。</li>
     <li><b>nanolize 重写更快，花费相同。</b>7 小时 37 分对 12 小时 28 分，都是 570 多美元。</li>
     <li><b>行为上 nanolize 重写全部通过，压缩写法 268 条里有 4 条没过。</b>4 条里有 1 条是实际的功能退化：一个原本能独立运行的数据集准备脚本，现在没装 detectron2 就跑不起来。另外 3 条是配置文件的文本和结构变了。</li>
     <li><b>这套检查是 nanolize 那次运行冻结的，对它有主场优势。</b>nanolize 的第一版只过了 127 条，修了三轮才全过；压缩写法从没见过这些检查，第一次跑就过了 264 条。</li>
@@ -331,7 +331,7 @@ def set_global_cfg(cfg): global global_cfg; global_cfg.clear(); global_cfg.updat
 
   <ul class="plain">
     <li><b>两部分都是压缩写法更小。</b>Python 源码那部分差 6.4 个百分点；带走的那部分差 29.7 个百分点，因为 nanolize 根本没有动它。</li>
-    <li><b>nanolize 的 63.7% 是它运行时自己报的数字。</b>它的算法两边都不算那 224 个文件，所以分母是 596,313。把这些文件算回来，才是这一页的 74.9%。</li>
+    <li><b>nanolize 的 63.7% 是它运行时自己报的数字。</b>它的算法两边都不算那 224 个文件，所以分母是 596,313。把这些文件算回来，合计是 74.9%。</li>
     <li><b>压缩写法有 145,205 个 token 的数据在 gzip 文件里。</b>3 个文件：LVIS 类别表（124,675），COCO 类别、数据集划分、颜色表、模型库地址表等数据，以及一个图标（后两个文件合计约 20,500）。分词器读不了 gzip，不解压的话这些内容就凭空消失了。数据还在，运行时照样要读，所以这一页按解压后算。</li>
   </ul>
 
@@ -340,9 +340,9 @@ def set_global_cfg(cfg): global global_cfg; global_cfg.clear(); global_cfg.updat
     <div class="scroll"><table>
       <thead><tr><th>口径</th><th class="num">nanolize 重写</th><th class="num">压缩写法</th><th>说明</th></tr></thead>
       <tbody>
-        <tr><td><b>本页采用</b><small>源码加配置，gzip 按解压后算</small></td><td class="num"><b>74.9%</b></td><td class="num"><b>61.3%</b></td><td>三份代码同一套规则，分子分母是同一批内容</td></tr>
-        <tr><td>同上，但 gzip 里的数据不算</td><td class="num">74.9%</td><td class="num">44.4%</td><td>按文件存储的样子数。把数据搬进压缩包就能让数字变小</td></tr>
-        <tr><td>只看 nanolize 改写的范围</td><td class="num">63.7%</td><td class="num">57.3%</td><td>nanolize 运行报告里的口径</td></tr>
+        <tr><td><b>nanolize 改写的范围</b><small>第一张表用的口径；gzip 按解压后算</small></td><td class="num"><b>63.7%</b></td><td class="num"><b>57.3%</b></td><td>两边都动过的那部分代码，也是 nanolize 运行报告里的口径。三份代码同一套规则</td></tr>
+        <tr><td><b>合计</b><small>加上 nanolize 原样带走的 224 个文件</small></td><td class="num"><b>74.9%</b></td><td class="num"><b>61.3%</b></td><td>全部源码加配置，分子分母是同一批内容</td></tr>
+        <tr><td>合计，但 gzip 里的数据不算</td><td class="num">74.9%</td><td class="num">44.4%</td><td>按文件存储的样子数。把数据搬进压缩包就能让数字变小</td></tr>
         <tr><td>源码加配置的字节数<small>gzip 按解压后算</small></td><td class="num">71.7%</td><td class="num">56.2%</td><td>不用分词器，直接数字节</td></tr>
         <tr><td>整个仓库，连文档和测试，按存储的样子</td><td class="num">不适用</td><td class="num">43.8%</td><td>压缩写法自己的目标（50% 以内）大概是这个口径。nanolize 不交付文档，交付里的测试是验证用的，这个口径对它没有意义</td></tr>
         <tr><td>nanolize 的规则原样套到压缩写法上</td><td class="num">63.7%</td><td class="num">70.2%<small>量不完整</small></td><td>这条规则是“没改的测试、文档、带走的文件不算，改过的都算”。压缩写法把文档、YAML 都改了，于是全被算进分子，而分母里没有它们；3 个 gzip 文件也数不了。对它不公平，所以没有采用</td></tr>
