@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>detectron2 压缩方法对比</title>
+<meta name="description" content="同一份 detectron2，两种压缩方法的结果放在一起比：用时、花费、同一口径下的体积、268 条行为检查和 91 个能力的验证。">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column. Verdict and four figures first, then the table of all items, then the fix plan in five packages (one block per defect: seen, checked, change, test), then what is no bug, the order of work, limits and the probe log. */
+:root {
+  --bg: #f4f6f9; --card: #fcfcfb; --ink: #14171c; --ink-2: #474e5c; --ink-3: #6b7281;
+  --line: #dde1e8; --accent: #2a78d6; --accent-soft: #dfeafa;
+  --good-ink: #0b6b0b; --warn-ink: #7a5200; --crit-ink: #a52727;
+  --good-bg: #e4f5e4; --warn-bg: #fdf1d3; --crit-bg: #fbe3e3;
+  --font-body: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-head: "Space Grotesk", Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111315; --card: #1a1a19; --ink: #eceef1; --ink-2: #c0c5ce; --ink-3: #959cab;
+    --line: #2f333a; --accent: #5a9cec; --accent-soft: #162c47;
+    --good-ink: #7fd67f; --warn-ink: #f3c458; --crit-ink: #f08d8d;
+    --good-bg: #12301a; --warn-bg: #3a2d0c; --crit-bg: #3b1a1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111315; --card: #1a1a19; --ink: #eceef1; --ink-2: #c0c5ce; --ink-3: #959cab;
+  --line: #2f333a; --accent: #5a9cec; --accent-soft: #162c47;
+  --good-ink: #7fd67f; --warn-ink: #f3c458; --crit-ink: #f08d8d;
+  --good-bg: #12301a; --warn-bg: #3a2d0c; --crit-bg: #3b1a1a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.page { max-width: 1000px; margin: 0 auto; padding-block: 36px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 44px; }
+header { display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; color: var(--ink-3); }
+h1 { font-family: var(--font-head); font-weight: 600; font-size: clamp(25px, 4.2vw, 36px); line-height: 1.28; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-head); font-weight: 600; font-size: 22px; line-height: 1.3; margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; font-weight: 600; margin: 0; line-height: 1.45; }
+p { margin: 0; max-width: 72ch; }
+a { color: var(--accent); }
+.lede { font-size: 16.5px; color: var(--ink-2); max-width: 72ch; }
+code, .mono { font-family: var(--font-mono); font-size: .86em; }
+code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+section { display: flex; flex-direction: column; gap: 16px; min-width: 0; scroll-margin-top: 16px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--ink-2); }
+.meta b { font-weight: 500; color: var(--ink-3); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi .label { font-size: 12.5px; color: var(--ink-3); }
+.kpi .value { font-family: var(--font-head); font-weight: 600; font-size: 30px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kpi .value small { font-size: 15px; font-weight: 500; color: var(--ink-2); }
+.kpi .note { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.good { background: var(--good-bg); color: var(--good-ink); }
+.pill.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.pill.crit { background: var(--crit-bg); color: var(--crit-ink); }
+.pill i { font-style: normal; font-weight: 700; }
+.tag { display: inline-block; font-size: 12px; color: var(--ink-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; white-space: nowrap; line-height: 1.6; }
+
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; color: var(--ink-3); font-size: 12.5px; white-space: nowrap; vertical-align: bottom; }
+tr:last-child td { border-bottom: 0; }
+td.id { font-family: var(--font-head); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+td.id a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+td small { color: var(--ink-3); font-size: 12px; display: block; margin-top: 3px; line-height: 1.5; }
+td.nowrap { white-space: nowrap; }
+table.all td:nth-child(2) { min-width: 130px; }
+table.all td:nth-child(3) { min-width: 300px; }
+table.all td:nth-child(4) { min-width: 150px; }
+table.probes td:nth-child(3) { min-width: 260px; }
+table.probes td:nth-child(4) { min-width: 300px; }
+table.order td:nth-child(2) { min-width: 300px; }
+
+ul.plain { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 8px; max-width: 76ch; }
+ol.plain { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 8px; max-width: 76ch; }
+
+.pkg { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: 16px; }
+.pkg > p { color: var(--ink-2); }
+.item { display: grid; grid-template-columns: 3.2em 1fr; gap: 4px 14px; padding: 22px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 16px; }
+.item:first-child { padding-top: 2px; } .item:last-child { border-bottom: 0; padding-bottom: 2px; }
+.item .n { font-family: var(--font-head); font-weight: 600; font-size: 22px; line-height: 1.25; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.item .body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.item .head { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.item .src { font-size: 12.5px; color: var(--ink-3); }
+.item dl { margin: 0; display: grid; grid-template-columns: 7.2em 1fr; gap: 10px 12px; font-size: 14px; }
+.item dt { color: var(--ink-3); font-size: 13px; padding-top: 1px; }
+.item dd { margin: 0; max-width: 74ch; min-width: 0; }
+.item dd > ul, .item dd > ol, .item dd > pre { margin-top: 8px; }
+.item dd > ul:first-child, .item dd > ol:first-child { margin-top: 0; }
+.item dd > pre + * { margin-top: 8px; }
+.item dd p { margin-top: 8px; }
+@media (max-width: 560px) { .item { grid-template-columns: 1fr; } .item dl { grid-template-columns: 1fr; gap: 2px 0; } .item dt { margin-top: 8px; } }
+
+pre { margin: 0; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; background: var(--accent-soft); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+footer { font-size: 12.5px; color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+footer p { max-width: 86ch; }
+/* additions for this page */
+table td.nowrap, table th.nowrap { white-space: nowrap; }
+@media (max-width: 720px) {
+  .scroll table:has(th:nth-child(3)) { min-width: 640px; }
+  .scroll table:has(th:nth-child(5)) { min-width: 860px; }
+}
+.panel > h3 { font-size: 17px; }
+.note { font-size: 13px; color: var(--ink-3); max-width: 80ch; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 18px; }
+pre, code { font-variant-ligatures: none; }
+td:first-child { min-width: 7em; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.three { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.three > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.three .cap { font-size: 12.5px; color: var(--ink-3); }
+.three pre { font-size: 11.5px; line-height: 1.55; }
+table.hero td, table.hero th { padding-top: 11px; padding-bottom: 11px; }
+table.hero td.num { font-size: 14.5px; }
+table.hero td.num b { font-family: var(--font-head); font-size: 17px; font-weight: 600; }
+table.hero td:nth-child(4) { min-width: 15em; color: var(--ink-2); }
+#checks td:nth-child(5), #caps td:nth-child(4) { min-width: 16em; }
+#fail td:nth-child(2) { min-width: 9em; } #fail td:nth-child(3), #fail td:nth-child(4) { min-width: 18em; }
+#methods td:nth-child(2), #methods td:nth-child(3) { min-width: 16em; }
+#record td:nth-child(2) { min-width: 20em; }
+/* the size chart: two series against the original, one axis from 0 to 100% */
+:root { --s1: #2a78d6; --s2: #eb6834; --track: #e6e9ef; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --s1: #3987e5; --s2: #d95926; --track: #2b2f36; } }
+:root[data-theme="dark"] { --s1: #3987e5; --s2: #d95926; --track: #2b2f36; }
+.bars { display: grid; grid-template-columns: minmax(10em, 17em) 1fr; gap: 18px 18px; align-items: center; }
+.bars .name { font-size: 13.5px; color: var(--ink); line-height: 1.5; }
+.bars .name small { display: block; color: var(--ink-3); font-size: 12px; }
+.bars .pair { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.bars .row { display: grid; grid-template-columns: 1fr 10.5em; gap: 10px; align-items: center; }
+.bars .track { height: 14px; background: var(--track); border-radius: 0 4px 4px 0; overflow: hidden; }
+.bars .fill { height: 100%; border-radius: 0 4px 4px 0; }
+.s1 { background: var(--s1); } .s2 { background: var(--s2); } .trk { background: var(--track); }
+.bars .val { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.bars .val small { color: var(--ink-3); font-size: 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; }
+@media (max-width: 620px) { .bars { grid-template-columns: 1fr; gap: 6px; } .bars .pair { margin-bottom: 12px; } .bars .row { grid-template-columns: 1fr 8.6em; } }
+.codecmp { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.codecmp > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.codecmp .cap { font-size: 12.5px; color: var(--ink-3); }
+.codecmp .cap + pre + .cap { margin-top: 10px; }
+.codecmp pre { font-size: 11.5px; line-height: 1.55; }
+@media (max-width: 760px) { .codecmp { grid-template-columns: 1fr; } }
+#size .panel > .scroll td:first-child { min-width: 15em; }
+#fail td:first-child { min-width: 2em; }
+#fail td:nth-child(3) { min-width: 20em; }
+
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="eyebrow">nanolize · 对比记录 · detectron2 · 2026-11-25</div>
+  <h1>detectron2 两种压缩方法的对比：压缩写法压得更小，nanolize 重写更快、行为保持得更完整</h1>
+  <p class="lede">同一份 detectron2，两种方法各自压出一个更小的版本。这一页把两个结果放在一起比：用了多久、花了多少钱、同一口径下体积降到多少，以及同一套 268 条行为检查和 91 个能力的验证各过了多少。</p>
+  <div class="meta">
+    <span><b>原版</b> detectron2 的同一个提交，源码加配置共 861,630 token</span>
+    <span><b>nanolize 重写</b> <a href="../nanolize-detectron2-all-20261124/">11 月 24 日的全功能运行</a>交付的版本</span>
+    <span><b>压缩写法</b> 另一种方法交出的压缩版，文件结构和原版相同</span>
+  </div>
+</header>
+
+<section id="summary">
+  <h2>一张表看完</h2>
+  <div class="panel scroll"><table class="hero">
+    <thead><tr><th></th><th class="num">nanolize 重写</th><th class="num">压缩写法</th><th>差别</th></tr></thead>
+    <tbody>
+      <tr><td><b>用时</b></td><td class="num"><b>7 小时 37 分</b></td><td class="num">12 小时 28 分</td><td>nanolize 少 4 小时 51 分（少 39%）</td></tr>
+      <tr><td><b>花费</b></td><td class="num">575.00 美元</td><td class="num">573.55 美元</td><td>基本相同</td></tr>
+      <tr><td><b>体积</b><small>占原版的比例，越小越好</small></td><td class="num">74.9%</td><td class="num"><b>61.3%</b></td><td>压缩写法小 13.6 个百分点。见<a href="#size">体积</a></td></tr>
+      <tr><td><b>行为检查</b><small>共 268 条</small></td><td class="num"><b>268</b>（100%）</td><td class="num">264（98.5%）</td><td>压缩写法有 4 条没过。见<a href="#checks">行为检查</a></td></tr>
+      <tr><td><b>测试用例</b><small>共 4,090 个</small></td><td class="num"><b>4,090</b>（100%）</td><td class="num">4,057（99.2%）</td><td>33 个用例没过，其中 32 个是同一个脚本</td></tr>
+      <tr><td><b>能力验证</b><small>共 91 个能力</small></td><td class="num"><b>91</b>（100%）</td><td class="num">80（87.9%）</td><td>9 个退化，2 个未验证。见<a href="#caps">能力验证</a></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">每一行里加粗的是更好的一边。压缩写法的用时和花费由它的操作者提供，不是这一页量出来的；其余数字都是在同一台机器上用同一套工具量的。</p>
+
+  <h3>要点</h3>
+  <ul class="plain">
+    <li><b>压缩写法的体积更小。</b>源码加配置合计是原版的 61.3%，nanolize 重写是 74.9%。只看 Python 源码那部分，是 57.3% 对 63.7%。</li>
+    <li><b>差距有一半来自 nanolize 没有碰的文件。</b>nanolize 这次把 224 个文件原样带走（C++/CUDA 源码、YAML 配置、LVIS 类别表），压缩写法把其中的 YAML 压成一行、把类别表放进了 gzip。</li>
+    <li><b>nanolize 重写更快，花费相同。</b>7 小时 37 分对 12 小时 28 分，都是 570 多美元。</li>
+    <li><b>行为上 nanolize 重写全部通过，压缩写法 268 条里有 4 条没过。</b>4 条里有 1 条是实际的功能退化：一个原本能独立运行的数据集准备脚本，现在没装 detectron2 就跑不起来。另外 3 条是配置文件的文本和结构变了。</li>
+    <li><b>这套检查是 nanolize 那次运行冻结的，对它有主场优势。</b>nanolize 的第一版只过了 127 条，修了三轮才全过；压缩写法从没见过这些检查，第一次跑就过了 264 条。</li>
+    <li><b>两种方法的目标不同。</b>nanolize 按功能重写，交出的是正常可读的代码；压缩写法保留原来的文件和逻辑，把写法压到最短，代码不是给人读的。见<a href="#methods">两种方法做了什么</a>。</li>
+  </ul>
+</section>
+
+
+<section id="methods">
+  <h2>两种方法做了什么</h2>
+  <p>两边的起点是同一个原版，做的事很不一样。下面的名字是这一页起的：一个叫“nanolize 重写”，一个叫“压缩写法”。</p>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th></th><th>nanolize 重写</th><th>压缩写法</th></tr></thead>
+    <tbody>
+      <tr><td><b>做法</b></td><td>先画出功能图，冻结一套行为检查，再让作者会话对照约定重新写一遍代码，和原版比较，不过就修</td><td>保留原来的文件和逻辑，把写法压到最短</td></tr>
+      <tr><td><b>Python 代码</b></td><td>正常的缩进、命名和文档字符串；代码对照约定重新写过，比原版短</td><td>一格缩进，多条语句用分号连成一行，局部变量改成单字母，注释和文档字符串全部删掉</td></tr>
+      <tr><td><b>文件结构</b></td><td>按功能重新组织：450 个源文件变成 399 个（去掉 59 个，新增 8 个）</td><td>和原版相同，只新增了 72 个文件（公共配置和数据表），去掉 1 个</td></tr>
+      <tr><td><b>YAML 配置</b></td><td>原样带走，一个字节不改</td><td>每个文件压成一行，公共部分抽成 64 个 <code>Base-N</code> 文件</td></tr>
+      <tr><td><b>大的数据表</b><small>LVIS 类别表、COCO 类别、模型库地址表等</small></td><td>LVIS 类别表原样带走；其余留在代码里</td><td>从代码里挪出来，放进 3 个 gzip 文件，运行时解压读取</td></tr>
+      <tr><td><b>C++/CUDA 源码</b></td><td>原样带走</td><td>18 个文件全部做了压缩</td></tr>
+      <tr><td><b>文档</b></td><td>不在交付范围里</td><td>保留并压缩到原来的 30%</td></tr>
+      <tr><td><b>源码行数</b><small>原版 71,975 行</small></td><td>48,695 行</td><td>15,993 行（语句连成了一行，行数不可比）</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="panel">
+    <h3>同一段代码，三个版本</h3>
+    <p>取配置模块里相邻的两个函数：原版、nanolize 重写、压缩写法。</p>
+    <div class="codecmp">
+      <div><div class="cap">原版</div>
+<pre>def get_cfg() -&gt; CfgNode:
+    """
+    Get a copy of the default config.
+
+    Returns:
+        a detectron2 CfgNode instance.
+    """
+    from .defaults import _C
+
+    return _C.clone()
+
+
+def set_global_cfg(cfg: CfgNode) -&gt; None:
+    """
+    Let the global config point to the given cfg.
+
+    Assume that the given "cfg" has the key "KEY", after calling
+    `set_global_cfg(cfg)`, the key can be accessed by:
+    ::
+        from detectron2.config import global_cfg
+        print(global_cfg.KEY)
+
+    （后面还有 3 行说明）
+    """
+    global global_cfg
+    global_cfg.clear()
+    global_cfg.update(cfg)</pre></div>
+      <div>
+      <div class="cap">nanolize 重写</div>
+<pre>def get_cfg() -&gt; CfgNode:
+    from .defaults import _C
+
+    return _C.clone()
+
+
+def set_global_cfg(cfg: CfgNode) -&gt; None:
+    """Fills `global_cfg` with the content of cfg."""
+    global_cfg.clear()
+    global_cfg.update(cfg)</pre>
+      <div class="cap">压缩写法</div>
+<pre>def get_cfg():from.defaults import _C; return _C.clone()
+
+def set_global_cfg(cfg): global global_cfg; global_cfg.clear(); global_cfg.update(cfg)</pre></div>
+    </div>
+    <p class="note">这一段比较短，两边都很省。差别在长函数里更明显：nanolize 重写会改结构，压缩写法只改写法。nanolize 交付的代码里，参与比较的函数行有 62% 和原版相同。</p>
+  </div>
+</section>
+
+
+<section id="cost">
+  <h2>用时和花费</h2>
+  <div class="panel scroll"><table>
+    <thead><tr><th></th><th class="num">nanolize 重写</th><th class="num">压缩写法</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><b>用时</b></td><td class="num">7 小时 37 分</td><td class="num">12 小时 28 分</td><td>nanolize 少 4 小时 51 分</td></tr>
+      <tr><td><b>花费</b></td><td class="num">575.00 美元</td><td class="num">573.55 美元</td><td>相差 1.45 美元</td></tr>
+    </tbody>
+  </table></div>
+  <ul class="plain">
+    <li><b>nanolize 的数字是从运行记录里量的。</b>用时是整个运行的起止，包括主持会话读项目、写清单的 38 分钟；排队合计约 10 秒，全程无人值守，没有等人的时间。花费是 106 个模型会话各自报告的数字相加。</li>
+    <li><b>压缩写法的数字由它的操作者提供。</b>这一页没有它的运行记录，不知道里面是否含排队或等人的时间。</li>
+    <li><b>nanolize 的钱花在哪。</b>设计测试 273 美元（47%），写第一版 240 美元（42%），三轮修复 27 美元，其余是控制器和主持会话。它的 7 个多小时里，有 2 小时 44 分在冻结检查，4 小时 46 分在写第一版（两者同时进行），1 小时 42 分在修复。细节见<a href="../nanolize-detectron2-all-20261124/">那次运行的记录</a>。</li>
+  </ul>
+</section>
+
+
+<section id="size">
+  <h2>体积：同一口径下各降到多少</h2>
+  <p>三份代码（原版、nanolize 重写、压缩写法）用同一个分词器、同一套规则数 token。只数源码和配置；测试和文档都不算；放进 gzip 的数据按解压后的文本算。原版的文件分成两部分看：nanolize 那次运行改写的范围，和它原样带走、没有碰的 224 个文件。</p>
+
+  <div class="panel">
+    <div class="legend">
+      <span><i class="s1"></i>nanolize 重写</span>
+      <span><i class="s2"></i>压缩写法</span>
+      <span><i class="trk"></i>原版 = 100%</span>
+    </div>
+    <div class="bars" role="img" aria-label="两种方法的体积占原版的比例，分三部分">
+      <div class="name">nanolize 改写的范围<small>431 个文件，主要是 Python 源码；原版 596,313 token</small></div>
+      <div class="pair">
+        <div class="row"><div class="track"><div class="fill s1" style="width:63.7%" title="nanolize 重写：379,914 token，原版的 63.7%"></div></div><div class="val">63.7% <small>379,914</small></div></div>
+        <div class="row"><div class="track"><div class="fill s2" style="width:57.3%" title="压缩写法：341,532 token，原版的 57.3%"></div></div><div class="val">57.3% <small>341,532</small></div></div>
+      </div>
+      <div class="name">nanolize 原样带走的 224 个文件<small>C++/CUDA 源码、YAML 配置、LVIS 类别表等；原版 265,317 token</small></div>
+      <div class="pair">
+        <div class="row"><div class="track"><div class="fill s1" style="width:100%" title="nanolize 重写：265,317 token，没有改动"></div></div><div class="val">100% <small>265,317</small></div></div>
+        <div class="row"><div class="track"><div class="fill s2" style="width:70.3%" title="压缩写法：186,530 token，原版的 70.3%"></div></div><div class="val">70.3% <small>186,530</small></div></div>
+      </div>
+      <div class="name"><b>合计</b><small>源码加配置；原版 861,630 token</small></div>
+      <div class="pair">
+        <div class="row"><div class="track"><div class="fill s1" style="width:74.9%" title="nanolize 重写：645,231 token，原版的 74.9%"></div></div><div class="val"><b>74.9%</b> <small>645,231</small></div></div>
+        <div class="row"><div class="track"><div class="fill s2" style="width:61.3%" title="压缩写法：528,062 token，原版的 61.3%"></div></div><div class="val"><b>61.3%</b> <small>528,062</small></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>部分</th><th class="num">原版</th><th class="num">nanolize 重写</th><th class="num">压缩写法</th></tr></thead>
+    <tbody>
+      <tr><td>nanolize 改写的范围</td><td class="num">596,313</td><td class="num">379,914（63.7%）</td><td class="num">341,532（57.3%）</td></tr>
+      <tr><td>nanolize 原样带走的 224 个文件</td><td class="num">265,317</td><td class="num">265,317（100%）</td><td class="num">186,530（70.3%）</td></tr>
+      <tr><td><b>合计</b></td><td class="num">861,630</td><td class="num"><b>645,231（74.9%）</b></td><td class="num"><b>528,062（61.3%）</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <ul class="plain">
+    <li><b>两部分都是压缩写法更小。</b>Python 源码那部分差 6.4 个百分点；带走的那部分差 29.7 个百分点，因为 nanolize 根本没有动它。</li>
+    <li><b>nanolize 的 63.7% 是它运行时自己报的数字。</b>它的算法两边都不算那 224 个文件，所以分母是 596,313。把这些文件算回来，才是这一页的 74.9%。</li>
+    <li><b>压缩写法有 145,205 个 token 的数据在 gzip 文件里。</b>3 个文件：LVIS 类别表（124,675），COCO 类别、数据集划分、颜色表、模型库地址表等数据，以及一个图标（后两个文件合计约 20,500）。分词器读不了 gzip，不解压的话这些内容就凭空消失了。数据还在，运行时照样要读，所以这一页按解压后算。</li>
+  </ul>
+
+  <div class="panel">
+    <h3>换一种口径，数字差很多</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>口径</th><th class="num">nanolize 重写</th><th class="num">压缩写法</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><b>本页采用</b><small>源码加配置，gzip 按解压后算</small></td><td class="num"><b>74.9%</b></td><td class="num"><b>61.3%</b></td><td>三份代码同一套规则，分子分母是同一批内容</td></tr>
+        <tr><td>同上，但 gzip 里的数据不算</td><td class="num">74.9%</td><td class="num">44.4%</td><td>按文件存储的样子数。把数据搬进压缩包就能让数字变小</td></tr>
+        <tr><td>只看 nanolize 改写的范围</td><td class="num">63.7%</td><td class="num">57.3%</td><td>nanolize 运行报告里的口径</td></tr>
+        <tr><td>源码加配置的字节数<small>gzip 按解压后算</small></td><td class="num">71.7%</td><td class="num">56.2%</td><td>不用分词器，直接数字节</td></tr>
+        <tr><td>整个仓库，连文档和测试，按存储的样子</td><td class="num">不适用</td><td class="num">43.8%</td><td>压缩写法自己的目标（50% 以内）大概是这个口径。nanolize 不交付文档，交付里的测试是验证用的，这个口径对它没有意义</td></tr>
+        <tr><td>nanolize 的规则原样套到压缩写法上</td><td class="num">63.7%</td><td class="num">70.2%<small>量不完整</small></td><td>这条规则是“没改的测试、文档、带走的文件不算，改过的都算”。压缩写法把文档、YAML 都改了，于是全被算进分子，而分母里没有它们；3 个 gzip 文件也数不了。对它不公平，所以没有采用</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">源码行数不放进比较：原版 71,975 行，nanolize 重写 48,695 行，压缩写法 15,993 行。压缩写法把多条语句连成了一行，行数说明不了问题。</p>
+  </div>
+</section>
+
+
+<section id="checks">
+  <h2>行为检查：同一套 268 条</h2>
+  <p>检查是 nanolize 那次运行在动手改代码之前冻结的：每一条都先在原版上跑过，原版通过或输出稳定，才留下来当基线。这里把同一套检查分别跑在两个版本上，和原版的结果比。只验证，不修复。</p>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>检查的种类</th><th class="num">条数</th><th class="num">nanolize 重写</th><th class="num">压缩写法</th><th>是什么</th></tr></thead>
+    <tbody>
+      <tr><td><b>原版检查</b></td><td class="num">33</td><td class="num">33</td><td class="num">33</td><td>直接跑 detectron2 自带的测试文件</td></tr>
+      <tr><td><b>设计出的测试</b></td><td class="num">149</td><td class="num">149</td><td class="num">149</td><td>只从公开入口使用代码的 pytest 测试，nanolize 运行里写的</td></tr>
+      <tr><td><b>设计出的场景</b></td><td class="num">54</td><td class="num">54</td><td class="num">52</td><td>像用户那样跑一段程序，返回值和产出的文件要和原版逐项相同</td></tr>
+      <tr><td><b>命令行帮助</b></td><td class="num">13</td><td class="num">13</td><td class="num">13</td><td>各个工具的 <code>--help</code> 输出和原版相同</td></tr>
+      <tr><td><b>恢复出的测试</b></td><td class="num">13</td><td class="num">13</td><td class="num">13</td><td>原版测试里只用公开接口的部分，单独拆出来的</td></tr>
+      <tr><td><b>程序输出</b></td><td class="num">6</td><td class="num">6</td><td class="num">4</td><td>例如打印默认配置、遍历全部 YAML 配置，输出和原版相同</td></tr>
+      <tr><td><b>合计</b></td><td class="num">268</td><td class="num"><b>268</b>（100%）</td><td class="num"><b>264</b>（98.5%）</td><td></td></tr>
+      <tr><td>其中的测试用例</td><td class="num">4,090</td><td class="num">4,090</td><td class="num">4,057（99.2%）</td><td>另有 19 个用例在三份代码上都是跳过</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">后五类合起来是 235 条“约定检查”：它们只认外部行为，不碰内部实现，所以原版、重写的版本、压缩的版本都能跑同一份。</p>
+
+  <div class="panel" id="fail">
+    <h3>压缩写法没过的 4 条</h3>
+    <div class="scroll"><table>
+      <thead><tr><th></th><th>检查</th><th>原版的行为</th><th>压缩写法的行为</th><th>性质</th></tr></thead>
+      <tbody>
+        <tr><td class="id">1</td><td>数据集准备脚本<small>场景，32 个用例全部没过</small></td><td><code>datasets/prepare_cocofied_lvis.py</code> 是独立脚本，只用标准库，类别表写在脚本里</td><td>类别表被挪进了包里的 gzip 文件，脚本改成从 <code>detectron2</code> 包里读。没装 detectron2 时直接运行，报 <code>ModuleNotFoundError</code></td><td><span class="pill crit">功能退化</span></td></tr>
+        <tr><td class="id">2</td><td>YAML 配置清单<small>程序输出，多出 34 行</small></td><td>遍历配置目录，列出 92 个配置和各自合并后的结果</td><td>多列出 34 个新增的 <code>Base-N.yaml</code>。原有 92 个配置合并后的结果和原版逐个相同</td><td><span class="pill warn">文件结构变了</span></td></tr>
+        <tr><td class="id">3</td><td>模型库<small>场景，20 个用例里 1 个没过</small></td><td>基础 YAML 文件的第一行是 <code>MODEL:</code></td><td>第一行是 <code>_BASE_: Base-4.yaml</code></td><td><span class="pill warn">文件文本变了</span></td></tr>
+        <tr><td class="id">4</td><td>ViTDet 配置<small>程序输出，127 行不同</small></td><td>把每个 ViTDet 配置展开打印出来</td><td>配置里 lambda 的归属名不同；另有几处配置多出了数据集相关的条目</td><td><span class="pill warn">配置内容有差异</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">第 2、3 条说明压缩写法改了随包发布的配置文件的样子，但合并之后的配置没有变；直接读这些文件文本的用户会看到差别，用配置的代码不会。第 4 条的差异没有逐项追查到底。</p>
+  </div>
+
+  <ul class="plain">
+    <li><b>原版自带的测试，两边都是 33 条全过。</b>差别都在约定检查里。</li>
+    <li><b>压缩写法是第一次见这些检查。</b>nanolize 的第一版在同一套检查上只过了 127 条，三轮修复之后是 268 条。压缩写法没有针对它们修过，第一次跑是 264 条。保留原来的逻辑、只改写法，行为几乎天然不变。</li>
+    <li><b>检查看不到压缩写法改过的 C++ 源码。</b>两边跑检查时用的都是同一份由原版源码预先编译好的扩展。nanolize 的 C++ 源码和原版一个字节不差，所以这份扩展就是它的；压缩写法把 18 个 C++/CUDA 文件都压缩了，这些改动没有被重新编译，也就没有被检查到。</li>
+  </ul>
+</section>
+
+
+<section id="caps">
+  <h2>能力验证：91 个能力</h2>
+  <p>nanolize 把 detectron2 拆成一棵功能树：80 个叶子能力（例如“YAML 配置系统”“模型库”“COCO 数据集”），上面有 11 个分组。每条检查都挂在它所验证的能力上。一个能力名下的检查全过，才算通过；有一条退化，这个能力就是退化；分组跟着下面的能力走。</p>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th></th><th class="num">个数</th><th class="num">nanolize 重写</th><th>压缩写法</th></tr></thead>
+    <tbody>
+      <tr><td><b>叶子能力</b></td><td class="num">80</td><td class="num">80 通过</td><td>75 通过，4 退化，1 未验证</td></tr>
+      <tr><td><b>分组</b></td><td class="num">11</td><td class="num">11 通过</td><td>5 通过，5 退化，1 未验证</td></tr>
+      <tr><td><b>合计</b></td><td class="num">91</td><td class="num"><b>91 通过</b>（100%）</td><td><b>80 通过</b>（87.9%），9 退化，2 未验证</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>压缩写法没通过的能力</th><th>状态</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr><td><b>数据集准备脚本</b></td><td><span class="pill crit">退化</span></td><td>上面第 1 条检查</td></tr>
+      <tr><td><b>YAML 配置系统和默认值</b></td><td><span class="pill warn">退化</span></td><td>上面第 2 条检查</td></tr>
+      <tr><td><b>模型库</b></td><td><span class="pill warn">退化</span></td><td>上面第 3 条检查</td></tr>
+      <tr><td><b>ViTDet 配置</b></td><td><span class="pill warn">退化</span></td><td>上面第 4 条检查</td></tr>
+      <tr><td>5 个分组<small>整个 Detectron2、基础、可视化和分析、命令行工具和配置、研究项目</small></td><td><span class="pill warn">退化</span></td><td>下面有退化的能力，分组跟着算退化</td></tr>
+      <tr><td>DensePose 可视化，以及 DensePose 项目这个分组</td><td><span class="pill warn">未验证</span></td><td>DensePose 可视化没有自己的检查，要靠能触达它的那些能力的检查全部通过来间接证明，而其中 YAML 配置那条没过</td></tr>
+    </tbody>
+  </table></div>
+
+  <ul class="plain">
+    <li><b>4 条检查没过，放大成了 11 个能力。</b>4 个叶子直接退化，5 个分组被带下来，另外 2 个失去了间接证明。按叶子算是 75 / 80（93.8%）。</li>
+    <li><b>能力的结果是用 nanolize 自己的判定规则重新算的。</b>直接读验证命令的报告，两边都没有一个能力是“通过”：报告发现运行环境和冻结基线时不同，就不肯下任何肯定的结论。这一页只按检查结果套同一条规则，两边一视同仁。算法先在 nanolize 那次运行的三次完整比较上核对过，逐项对上了原结果。</li>
+  </ul>
+</section>
+
+
+<section id="read">
+  <h2>读这些数字时要知道的</h2>
+  <div class="panel">
+    <ul class="plain">
+      <li><b>检查对 nanolize 有主场优势。</b>268 条是 nanolize 那次运行冻结的，它交付的版本就是对着这些检查修到全过的。压缩写法没有见过它们。所以“268 对 264”不能读成 nanolize 的方法更能保持行为；更公平的读法是：压缩写法第一次跑就过了 98.5%，nanolize 的第一版是 47%。</li>
+      <li><b>反过来的比较没有做。</b>没有拿压缩写法自带的测试去跑 nanolize 的版本。nanolize 是重写，内部结构变了，和内部结构绑定的原版测试本来就不适用。它自己在交付后回放过 73 个离开验收的原版测试：原版通过 68 个，交付的版本通过 67 个。</li>
+      <li><b>两种方法的目标不同，这一页没有量可读性。</b>nanolize 交出的是可以继续维护的代码；压缩写法交出的代码一格缩进、单字母变量、没有注释，更像一份发布用的压缩包。只比体积，对前者不利；只比行为，对后者不利。</li>
+      <li><b>压缩写法改过的 C++ 源码没有被验证。</b>检查用的是原版源码编译出的扩展，见<a href="#checks">行为检查</a>一节。</li>
+      <li><b>两边都没有安装检查。</b>没有在全新环境里把任何一个版本装起来过。nanolize 的交付因此带着“没有安装证据”的缺口；压缩写法同样没有这项证据。</li>
+      <li><b>压缩写法的用时和花费不是这里量的。</b>由它的操作者提供，这一页没有它的运行记录。</li>
+      <li><b>没有比运行速度。</b>压缩写法在导入时要解压数据表，这一页没有量它对启动时间的影响。</li>
+      <li><b>压缩写法把项目目录里的测试文件也压缩了。</b>DensePose 和 TensorMask 两个项目下的测试文件和原版不同。这些文件不在 268 条检查里，不影响上面的结果；nanolize 的验证命令会把它报成“原版测试被改过”。</li>
+    </ul>
+  </div>
+</section>
+
+
+<section id="record">
+  <h2>记录</h2>
+  <div class="panel scroll"><table>
+    <thead><tr><th>步骤</th><th>怎么做的</th></tr></thead>
+    <tbody>
+      <tr><td><b>两个版本</b></td><td>nanolize 重写：11 月 24 日全功能运行交付的提交（候选版本 6）。压缩写法：另一种方法交出的压缩包，898 个文件，目录结构和原版相同</td></tr>
+      <tr><td><b>体积</b></td><td>用 nanolize 自带的分词器（固定版本的 cl100k_base）逐个文件数 token，三份代码同一个脚本。每个文件按它在原版里的身份归类：nanolize 量过的 431 个文件、带走的 224 个文件、文档、测试。原版没有的新文件按内容来源归类（新增的公共 YAML 和 LVIS 数据归到带走的那部分，其余归到改写的范围）。gzip 文件解压后再数</td></tr>
+      <tr><td><b>把压缩写法变成可验证的版本</b></td><td>从 nanolize 冻结检查时的那个提交出发，测试目录保持冻结时的样子，其余文件全部换成压缩写法的文件：取了 833 个文件，它自带的 69 个测试文件没有取，去掉了 1 个它没有的原版文件。同一个脚本拿 nanolize 的交付包试过，得到的文件树和交付的提交完全相同</td></tr>
+      <tr><td><b>行为检查</b></td><td>用 nanolize 自带的验证命令，对着那次运行冻结的基线，把 268 条检查在每个版本上各跑一遍，关闭自动修复。两个版本各在一个计算节点上串行跑，各用了 27 到 28 分钟。准备步骤和运行时一样：放入由原版源码编译好的扩展，建好模型库的配置链接</td></tr>
+      <tr><td><b>对照</b></td><td>nanolize 的版本按这条路重跑，结果和它运行时最后一次完整比较相同：268 条检查、4,090 个用例、379,914 token</td></tr>
+      <tr><td><b>能力验证</b></td><td>调用 nanolize 自己的能力判定函数，输入是验证记录里每条检查的比较结果，去掉“运行环境和基线不同”“原版测试被改过”两条提示。在运行时三次完整比较的记录上，这样算出的结果和记录里的逐项相同（31、81、91 个通过）</td></tr>
+    </tbody>
+  </table></div>
+
+  <ul class="plain">
+    <li><b>数字的来源。</b>nanolize 的用时和花费来自它的运行记录，见<a href="../nanolize-detectron2-all-20261124/">那次运行的页面</a>。体积、检查、能力的数字都来自这次对比新产生的两份验证记录和体积脚本的输出。压缩写法的用时和花费是提供的数字。</li>
+    <li><b>没有做的事。</b>没有修改任何一个版本的代码；没有做安装检查；没有重新编译 C++ 扩展；没有比运行速度；没有用压缩写法自带的测试去跑 nanolize 的版本。</li>
+  </ul>
+
+  <footer>
+    <p>这一页记录的是 2026 年 11 月 25 日做的一次对比。所有比例都以同一个原版提交为基准。</p>
+    <p>相关页面：<a href="../nanolize-detectron2-all-20261124/">detectron2 全功能运行记录</a>。</p>
+  </footer>
+</section>
+
+
+</div>
+</body>
+</html>
